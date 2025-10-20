@@ -1,4 +1,14 @@
-const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+const API_BASE = [
+  import.meta.env.VITE_API_BASE,
+  import.meta.env.VITE_API_URL,
+  import.meta.env.VITE_BACKEND_URL,
+  import.meta.env.VITE_APP_API_BASE,
+  import.meta.env.VITE_APP_API_URL
+]
+  .map(value => (value || '').trim())
+  .find(Boolean)
+
+const sanitizedBase = API_BASE?.replace(/\/$/, '') || ''
 
 const normalizeErrorMessage = message => {
   if (!message) return 'Request failed'
@@ -19,10 +29,16 @@ const normalizeErrorMessage = message => {
 }
 
 export async function api(path, { method = 'GET', token, body } = {}) {
+  if (!sanitizedBase) {
+    throw new Error(
+      'API base URL not configured. Set VITE_API_BASE (for example, https://laughing-funicular-rvgpqj5wqxx2xgqr-4000.app.github.dev).'
+    )
+  }
+
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const url = `${API_BASE}${path}`
+  const url = `${sanitizedBase}${path.startsWith('/') ? path : `/${path}`}`
 
   let response
   try {
