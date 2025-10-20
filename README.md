@@ -1,0 +1,1 @@
+# PACIFICAWAY Web\n\nSet VITE_API_BASE in .env then run npm install && npm run dev\n

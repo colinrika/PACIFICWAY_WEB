@@ -1,0 +1,1 @@
+import React from'react';export default function Home(){return(<div><h1>PACIFICAWAY Marketplace</h1><p className='muted'>Browse services & items, book appointments, and manage your account.</p><div className='alert'>Set VITE_API_BASE in <code>.env</code> to your Codespaces API URL.</div></div>)}
