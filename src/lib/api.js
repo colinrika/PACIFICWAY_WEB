@@ -8,7 +8,17 @@ const API_BASE = [
   .map(value => (value || '').trim())
   .find(Boolean)
 
-const sanitizedBase = API_BASE?.replace(/\/$/, '') || ''
+const fallbackCodespacesBase = () => {
+  if (typeof window === 'undefined') return ''
+
+  const { host } = window.location
+  const match = host.match(/^(.*)-\d+\.app\.github\.dev$/)
+  if (!match) return ''
+
+  return `https://${match[1]}-4000.app.github.dev`
+}
+
+const sanitizedBase = (API_BASE || fallbackCodespacesBase())?.replace(/\/$/, '') || ''
 
 const normalizeErrorMessage = message => {
   if (!message) return 'Request failed'
