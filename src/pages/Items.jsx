@@ -9,7 +9,22 @@ export default function Items(){
   const { user } = useAuth()
 
   useEffect(()=>{
-    api('/items').then(d=>setRows(d.items||[])).catch(e=>setError(e.message))
+    api('/items')
+      .then(d=>{
+        const list=Array.isArray(d)?d:d.items||d.data?.items||d.data||[]
+        const normalized=list.map((it,i)=>({
+          id:it.id??it.item_id??it.uuid??`item-${i}`,
+          name:it.name??it.item_name??it.title??'Untitled',
+          price:Number(
+            it.price??(typeof it.price_cents==='number'?it.price_cents/100:it.unit_price)
+          )||0,
+          stock:it.stock??it.quantity??it.stock_quantity??0,
+          providerName:it.provider_name??it.provider?.name??it.providerName??'',
+          providerId:it.provider_id??it.provider?.id??it.providerId??''
+        }))
+        setRows(normalized)
+      })
+      .catch(e=>setError(e.message))
   },[])
 
   return (
@@ -27,7 +42,7 @@ export default function Items(){
               <td>{r.name}</td>
               <td>${Number(r.price).toFixed(2)}</td>
               <td>{r.stock}</td>
-              <td>{r.provider_name||r.provider_id?.slice(0,8)}</td>
+              <td>{r.providerName||r.providerId?.slice(0,8)||'-'}</td>
             </tr>
           ))}
         </tbody>

@@ -1,1 +1,73 @@
-const API_BASE=(import.meta.env.VITE_API_BASE||'').replace(/\/$/,'');export async function api(p,{method='GET',token,body}={}){const h={'Content-Type':'application/json'};if(token)h.Authorization=`Bearer ${token}`;const r=await fetch(`${API_BASE}${p}`,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d}
+const API_BASE = [
+  import.meta.env.VITE_API_BASE,
+  import.meta.env.VITE_API_URL,
+  import.meta.env.VITE_BACKEND_URL,
+  import.meta.env.VITE_APP_API_BASE,
+  import.meta.env.VITE_APP_API_URL
+]
+  .map(value => (value || '').trim())
+  .find(Boolean)
+
+const fallbackCodespacesBase = () => {
+  if (typeof window === 'undefined') return ''
+
+  const { host } = window.location
+  const match = host.match(/^(.*)-\d+\.app\.github\.dev$/)
+  if (!match) return ''
+
+  return `https://${match[1]}-4000.app.github.dev`
+}
+
+const sanitizedBase = (API_BASE || fallbackCodespacesBase())?.replace(/\/$/, '') || ''
+
+const normalizeErrorMessage = message => {
+  if (!message) return 'Request failed'
+
+  if (
+    message.includes(
+      'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
+    )
+  ) {
+    return 'The browser blocked the request before the API responded. Try again or disable interfering extensions.'
+  }
+
+  if (message.includes('Failed to fetch')) {
+    return 'Could not reach the API server. Check your connection or VITE_API_BASE setting.'
+  }
+
+  return message
+}
+
+export async function api(path, { method = 'GET', token, body } = {}) {
+  if (!sanitizedBase) {
+    throw new Error(
+      'API base URL not configured. Set VITE_API_BASE (for example, https://laughing-funicular-rvgpqj5wqxx2xgqr-4000.app.github.dev).'
+    )
+  }
+
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const url = `${sanitizedBase}${path.startsWith('/') ? path : `/${path}`}`
+
+  let response
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined
+    })
+  } catch (err) {
+    throw new Error(normalizeErrorMessage(err?.message))
+  }
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const rawMessage =
+      data?.error || data?.message || data?.detail || `Request failed (${response.status})`
+    throw new Error(normalizeErrorMessage(rawMessage))
+  }
+
+  return data
+}
