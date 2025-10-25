@@ -51,16 +51,11 @@ const normalizeErrorMessage = message => {
 }
 
 export async function api(path, { method = 'GET', token, body } = {}) {
-  if (!sanitizedBase) {
-    throw new Error(
-      'API base URL not configured. Set VITE_API_BASE (for example, https://laughing-funicular-rvgpqj5wqxx2xgqr-4000.app.github.dev).'
-    )
-  }
-
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const url = `${sanitizedBase}${path.startsWith('/') ? path : `/${path}`}`
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const url = sanitizedBase ? `${sanitizedBase}${normalizedPath}` : normalizedPath
 
   let response
   try {
