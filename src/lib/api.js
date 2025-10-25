@@ -11,6 +11,12 @@ const API_BASE = [
 const fallbackCodespacesBase = () => {
   if (typeof window === 'undefined') return ''
 
+  if (import.meta.env.DEV) {
+    // During local/Vite development we rely on the dev-server proxy so
+    // requests can be made relative to the frontend origin and avoid CORS.
+    return ''
+  }
+
   const { protocol, hostname, host } = window.location
 
   if (/^localhost$/i.test(hostname) || /^127\.0\.0\.1$/.test(hostname)) {
