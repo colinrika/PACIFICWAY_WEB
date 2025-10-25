@@ -8,7 +8,9 @@ const API_BASE = [
   .map(value => (value || '').trim())
   .find(Boolean)
 
-const fallbackCodespacesBase = () => {
+const sanitizeBase = value => (value || '').replace(/\/$/, '')
+
+const computeCodespacesBase = () => {
   if (typeof window === 'undefined') return ''
 
   if (import.meta.env.DEV) {
@@ -30,7 +32,26 @@ const fallbackCodespacesBase = () => {
   return `https://${match[1]}-4000.app.github.dev`
 }
 
-const sanitizedBase = (API_BASE || fallbackCodespacesBase())?.replace(/\/$/, '') || ''
+const resolveBaseCandidates = () => {
+  const candidates = []
+
+  const envBase = sanitizeBase(API_BASE)
+  if (envBase) candidates.push(envBase)
+
+  const codespacesBase = sanitizeBase(computeCodespacesBase())
+
+  if (import.meta.env.DEV) {
+    candidates.push('')
+    if (codespacesBase) candidates.push(codespacesBase)
+  } else {
+    if (codespacesBase) candidates.push(codespacesBase)
+    candidates.push('')
+  }
+
+  return [...new Set(candidates)]
+}
+
+const baseCandidates = resolveBaseCandidates()
 
 const normalizeErrorMessage = message => {
   if (!message) return 'Request failed'
@@ -55,26 +76,57 @@ export async function api(path, { method = 'GET', token, body } = {}) {
   if (token) headers.Authorization = `Bearer ${token}`
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  const url = sanitizedBase ? `${sanitizedBase}${normalizedPath}` : normalizedPath
 
-  let response
-  try {
-    response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined
-    })
-  } catch (err) {
-    throw new Error(normalizeErrorMessage(err?.message))
+  let lastError = new Error('Request failed')
+
+  for (const base of baseCandidates) {
+    const url = base ? `${base}${normalizedPath}` : normalizedPath
+
+    let response
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+      })
+    } catch (err) {
+      lastError = new Error(normalizeErrorMessage(err?.message))
+      continue
+    }
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() || ''
+
+    if (!response.ok) {
+      const isHtmlLike = contentType.includes('text/html')
+
+      if (!base && response.status === 404 && isHtmlLike) {
+        // The dev server returned its HTML 404 page instead of proxying.
+        // Try the next base candidate (typically the forwarded Codespaces URL).
+        continue
+      }
+
+      let errorPayload = {}
+
+      if (contentType.includes('application/json')) {
+        errorPayload = await response.json().catch(() => ({}))
+      } else {
+        const text = await response.text().catch(() => '')
+        if (text) errorPayload = { message: text }
+      }
+
+      const rawMessage =
+        errorPayload?.error ||
+        errorPayload?.message ||
+        errorPayload?.detail ||
+        `Request failed (${response.status})`
+
+      lastError = new Error(normalizeErrorMessage(rawMessage))
+      continue
+    }
+
+    const data = await response.json().catch(() => ({}))
+    return data
   }
 
-  const data = await response.json().catch(() => ({}))
-
-  if (!response.ok) {
-    const rawMessage =
-      data?.error || data?.message || data?.detail || `Request failed (${response.status})`
-    throw new Error(normalizeErrorMessage(rawMessage))
-  }
-
-  return data
+  throw lastError
 }
