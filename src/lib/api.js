@@ -8,7 +8,9 @@ const API_BASE = [
   .map(value => (value || '').trim())
   .find(Boolean)
 
-const fallbackCodespacesBase = () => {
+const sanitizeBase = value => (value || '').replace(/\/$/, '')
+
+const computeCodespacesBase = () => {
   if (typeof window === 'undefined') return ''
 
   const { protocol, hostname, host } = window.location
@@ -24,7 +26,26 @@ const fallbackCodespacesBase = () => {
   return `https://${match[1]}-4000.app.github.dev`
 }
 
-const sanitizedBase = (API_BASE || fallbackCodespacesBase())?.replace(/\/$/, '') || ''
+const resolveBaseCandidates = () => {
+  const candidates = []
+
+  const envBase = sanitizeBase(API_BASE)
+  if (envBase) candidates.push(envBase)
+
+  const codespacesBase = sanitizeBase(computeCodespacesBase())
+
+  if (import.meta.env.DEV) {
+    candidates.push('')
+    if (codespacesBase) candidates.push(codespacesBase)
+  } else {
+    if (codespacesBase) candidates.push(codespacesBase)
+    candidates.push('')
+  }
+
+  return [...new Set(candidates)]
+}
+
+const baseCandidates = resolveBaseCandidates()
 
 const normalizeErrorMessage = message => {
   if (!message) return 'Request failed'
@@ -45,35 +66,69 @@ const normalizeErrorMessage = message => {
 }
 
 export async function api(path, { method = 'GET', token, body } = {}) {
-  if (!sanitizedBase) {
-    throw new Error(
-      'API base URL not configured. Set VITE_API_BASE (for example, https://laughing-funicular-rvgpqj5wqxx2xgqr-4000.app.github.dev).'
-    )
-  }
-
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const url = `${sanitizedBase}${path.startsWith('/') ? path : `/${path}`}`
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
 
-  let response
-  try {
-    response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined
-    })
-  } catch (err) {
-    throw new Error(normalizeErrorMessage(err?.message))
+  let lastError = new Error('Request failed')
+
+  for (const base of baseCandidates) {
+    const url = base ? `${base}${normalizedPath}` : normalizedPath
+
+    let response
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+      })
+    } catch (err) {
+      lastError = new Error(normalizeErrorMessage(err?.message))
+      continue
+    }
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() || ''
+
+    if (!response.ok) {
+      const isHtmlLike =
+        contentType.includes('text/html') ||
+        contentType.includes('text/plain') ||
+        contentType === ''
+
+      if (
+        isHtmlLike &&
+        ((response.status >= 500 && response.status < 600) ||
+          (!base && response.status === 404))
+      ) {
+        // The host likely served an HTML error page instead of the API response
+        // (commonly a dev proxy miss or upstream failure). Try the next base
+        // candidate to fall back to the Codespaces / configured API origin.
+        continue
+      }
+
+      let errorPayload = {}
+
+      if (contentType.includes('application/json')) {
+        errorPayload = await response.json().catch(() => ({}))
+      } else {
+        const text = await response.text().catch(() => '')
+        if (text) errorPayload = { message: text }
+      }
+
+      const rawMessage =
+        errorPayload?.error ||
+        errorPayload?.message ||
+        errorPayload?.detail ||
+        `Request failed (${response.status})`
+
+      lastError = new Error(normalizeErrorMessage(rawMessage))
+      continue
+    }
+
+    const data = await response.json().catch(() => ({}))
+    return data
   }
 
-  const data = await response.json().catch(() => ({}))
-
-  if (!response.ok) {
-    const rawMessage =
-      data?.error || data?.message || data?.detail || `Request failed (${response.status})`
-    throw new Error(normalizeErrorMessage(rawMessage))
-  }
-
-  return data
+  throw lastError
 }
