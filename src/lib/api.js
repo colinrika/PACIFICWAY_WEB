@@ -97,11 +97,19 @@ export async function api(path, { method = 'GET', token, body } = {}) {
     const contentType = response.headers.get('content-type')?.toLowerCase() || ''
 
     if (!response.ok) {
-      const isHtmlLike = contentType.includes('text/html')
+      const isHtmlLike =
+        contentType.includes('text/html') ||
+        contentType.includes('text/plain') ||
+        contentType === ''
 
-      if (!base && response.status === 404 && isHtmlLike) {
-        // The dev server returned its HTML 404 page instead of proxying.
-        // Try the next base candidate (typically the forwarded Codespaces URL).
+      if (
+        isHtmlLike &&
+        ((response.status >= 500 && response.status < 600) ||
+          (!base && response.status === 404))
+      ) {
+        // The host likely served an HTML error page instead of the API response
+        // (commonly a dev proxy miss or upstream failure). Try the next base
+        // candidate to fall back to the Codespaces / configured API origin.
         continue
       }
 
