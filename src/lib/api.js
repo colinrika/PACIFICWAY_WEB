@@ -11,7 +11,13 @@ const API_BASE = [
 const fallbackCodespacesBase = () => {
   if (typeof window === 'undefined') return ''
 
-  const { host } = window.location
+  const { protocol, hostname, host } = window.location
+
+  if (/^localhost$/i.test(hostname) || /^127\.0\.0\.1$/.test(hostname)) {
+    const baseProtocol = protocol === 'https:' ? 'https' : 'http'
+    return `${baseProtocol}://${hostname}:4000`
+  }
+
   const match = host.match(/^(.*)-\d+\.app\.github\.dev$/)
   if (!match) return ''
 
