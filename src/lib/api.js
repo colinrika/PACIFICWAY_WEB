@@ -102,14 +102,23 @@ export async function api(path, { method = 'GET', token, body } = {}) {
         contentType.includes('text/plain') ||
         contentType === ''
 
-      if (
-        isHtmlLike &&
-        ((response.status >= 500 && response.status < 600) ||
-          (!base && response.status === 404))
-      ) {
-        // The host likely served an HTML error page instead of the API response
-        // (commonly a dev proxy miss or upstream failure). Try the next base
-        // candidate to fall back to the Codespaces / configured API origin.
+      if (isHtmlLike && response.status >= 500 && response.status < 600) {
+        const origin = base || (typeof window !== 'undefined' ? window.location.origin : '')
+        lastError = new Error(
+          normalizeErrorMessage(
+            `The API at ${origin}${normalizedPath} responded with ${response.status}. Check that the backend is running and reachable.`
+          )
+        )
+        continue
+      }
+
+      if (isHtmlLike && !base && response.status === 404) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+        lastError = new Error(
+          normalizeErrorMessage(
+            `Received an HTML 404 from ${origin}${normalizedPath}. The dev proxy did not forward the request—start the backend on port 4000 or set VITE_API_BASE.`
+          )
+        )
         continue
       }
 
